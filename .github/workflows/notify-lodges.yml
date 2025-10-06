@@ -1,0 +1,53 @@
+name: Notify Lodge Repositories
+
+# Add this to lodge-flipbook-core repository
+# Triggers updates in all lodge repositories when templates change
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'templates/**'
+      - 'scripts/generate-pages.sh'
+      - 'scripts/Generate-Pages.ps1'
+      - 'scripts/configure.sh'
+  
+  workflow_dispatch:
+
+jobs:
+  notify-lodges:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Notify L5749 Repository
+        if: vars.L5749_REPO != ''
+        run: |
+          curl -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.LODGE_REPOS_TOKEN }}" \
+            https://api.github.com/repos/${{ vars.L5749_REPO }}/dispatches \
+            -d '{"event_type":"core-updated","client_payload":{"commit":"${{ github.sha }}"}}'
+      
+      - name: Notify L3155 Repository
+        if: vars.L3155_REPO != ''
+        run: |
+          curl -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.LODGE_REPOS_TOKEN }}" \
+            https://api.github.com/repos/${{ vars.L3155_REPO }}/dispatches \
+            -d '{"event_type":"core-updated","client_payload":{"commit":"${{ github.sha }}"}}'
+      
+      - name: Summary
+        run: |
+          echo "✅ Notifications sent to lodge repositories"
+          echo "Lodges will auto-update their submodules and regenerate pages"
+
+# Configuration Required:
+# 1. Create GitHub Personal Access Token with 'repo' scope
+# 2. Add as repository secret: LODGE_REPOS_TOKEN
+# 3. Add repository variables:
+#    - L5749_REPO = "yourorg/L5749-flipbook"
+#    - L3155_REPO = "yourorg/L3155-flipbook"
