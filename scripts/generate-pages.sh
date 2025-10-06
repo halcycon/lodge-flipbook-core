@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Generate page HTML files from templates using config/lodge.json
+# Generate page# Extract values from config
+LODGE_FULL_NAME=$(jq -r '.titles.siteTitle // .branding.siteTitle // .lodge.name' "$CONFIG")
+LODGE_SHORT_NAME=$(jq -r '.lodge.shortName // "L" + (.lodge.number // "0000")' "$CONFIG")ML files from templates using config/lodge.json
 set -euo pipefail
 
 LODGE_ROOT="${1:-.}"
