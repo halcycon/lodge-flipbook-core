@@ -1,0 +1,720 @@
+// _worker.js — L5749 (files.hundredelmslodge.org.uk)
+
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+    // Trigger background warm on first traffic after a deploy
+    try { maybeEnsureWarm(request, url, env, ctx); } catch {}
+    // Normalize /current to /current/
+    if (path === "/current") {
+      url.pathname = "/current/";
+      return Response.redirect(url.toString(), 301);
+    }
+
+    // ---------- Public thumbnails (R2) ----------
+    if (path.startsWith("/thumbnails/")) {
+      try {
+        // Special alias for the latest summons thumb
+        if (path === "/thumbnails/summons/current.jpg") {
+          const list = await env.THUMBS.list({ prefix: "summons/L5749-Summons-" });
+          const latestKey = list?.objects
+            ?.map(o => o.key)
+            ?.filter(k => /summons\/L5749-Summons-\d{4}\.jpg$/i.test(k))
+            ?.sort()
+            ?.pop();
+          if (latestKey) {
+            const obj = await env.THUMBS.get(latestKey);
+            if (obj) {
+              return new Response(obj.body, {
+                headers: {
+                  "content-type": "image/jpeg",
+                  "cache-control": "public, max-age=300" // short cache; can change
+                }
+              });
+            }
+          }
+          return new Response("Not found", { status: 404 });
+        }
+
+        const key = path.slice("/thumbnails/".length); // e.g. "summons/xxx.jpg"
+        const obj = await env.THUMBS.get(key);
+        if (!obj) return new Response("Not found", { status: 404 });
+        const isPng = /\.png$/i.test(key);
+        return new Response(obj.body, {
+          headers: {
+            "content-type": isPng ? "image/png" : "image/jpeg",
+            "cache-control": "public, max-age=604800, immutable"
+          }
+        });
+      } catch {
+        return new Response("Thumb error", { status: 500 });
+      }
+    }
+
+    // ---------- /__session probe (for Logout button visibility) ----------
+  if (path === "/__session" && request.method === "GET") {
+      const cookies = parseCookies(request.headers.get("cookie") || "");
+      const realms = ["members", "guest", "g1", "g2", "g3", "inst"];
+      const result = {};
+      for (const r of realms) {
+        const t = cookies[cookieName(r)];
+        result[r] = await verifyToken(t, r, env.SESSION_SECRET);
+      }
+      const any = Object.values(result).some(Boolean);
+      return json({ any, realms: result });
+    }
+
+    // ---------- Alias: /summons/current.pdf (auth: members OR guest) ----------
+    if (path === "/summons/current.pdf") {
+      // Read the latest mapping from the deployed assets
+      const curRes = await env.ASSETS.fetch(new Request(new URL("/current.json", url), { method: "GET" }));
+      if (!curRes.ok) return new Response("current.json missing", { status: 404, headers: { "cache-control": "no-store" } });
+      const cur = await curRes.json().catch(() => null);
+      if (!cur || !cur.summons) return new Response("No current summons", { status: 404, headers: { "cache-control": "no-store" } });
+
+      // Build version
+      let commit = "";
+      try {
+        const vRes = await env.ASSETS.fetch(new Request(new URL("/version.json", url), { method: "GET" }));
+        if (vRes.ok) { const j = await vRes.json().catch(() => null); if (j?.commit) commit = j.commit; }
+      } catch {}
+
+      // Auth: allow members or guest
+      const cookies = parseCookies(request.headers.get("cookie") || "");
+      const memberOk = await verifyToken(cookies[cookieName('members')], 'members', env.SESSION_SECRET);
+      const guestOk  = await verifyToken(cookies[cookieName('guest')],   'guest',   env.SESSION_SECRET);
+  if (!memberOk && !guestOk) return loginPage(url, 'guest', env);
+
+      // Try serve from edge cache under alias URL (normalized)
+      try {
+        if (request.method === 'GET') {
+          const hit = await caches.default.match(new Request(url.toString(), { method: 'GET' }));
+          if (hit) {
+            const h = new Headers(hit.headers);
+            h.set('x-edge-cache', 'hit');
+            return new Response(hit.body, { status: hit.status, headers: h });
+          }
+        }
+      } catch {}
+
+      // Fetch numbered target and proxy with alias caching semantics
+      const target = new URL(cur.summons, url);
+      if (commit) target.searchParams.set('v', commit);
+      const upstream = await env.ASSETS.fetch(new Request(target.toString(), { method: 'GET' }));
+      if (!upstream.ok) return new Response('Not found', { status: upstream.status });
+      let proxied = tweakAssetCaching(url, upstream);
+      try { 
+        // Populate cache under alias URL in background
+        const key = new Request(url.toString(), { method: 'GET' });
+        ctx.waitUntil((async ()=>{ if (proxied.status===200) await caches.default.put(key, proxied.clone()); })());
+      } catch {}
+      proxied = withHeader(proxied, 'x-edge-cache', 'miss');
+      if (request.method === 'HEAD') {
+        return new Response(null, { status: proxied.status, headers: proxied.headers });
+      }
+      return proxied;
+    }
+
+    // ---------- Always serve /current.json fresh ----------
+    if (path === "/current.json") {
+      const upstream = await env.ASSETS.fetch(request);
+      const h = new Headers(upstream.headers);
+      h.set("cache-control", "no-store, no-cache, must-revalidate");
+      h.set("pragma", "no-cache");
+      return new Response(upstream.body, { status: upstream.status, headers: h });
+    }
+
+    // ---------- Auth endpoints ----------
+    if (path === "/__auth" && request.method === "POST") {
+      return handleAuth(request, env);
+    }
+    if (path === "/__logout") {
+      return handleLogout(url);
+    }
+
+    // ---------- Cache warm-up (secured) ----------
+    if (path === "/__warm") {
+      if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+      const auth = request.headers.get('authorization') || '';
+      const hdrToken = (auth.match(/^Bearer\s+(.+)$/i)?.[1]) || request.headers.get('x-warm-token') || '';
+      const token = hdrToken || url.searchParams.get("token") || "";
+      const expected = env.WARM_TOKEN || "";
+      if (!expected || token !== expected) return new Response("Forbidden", { status: 403 });
+
+      try {
+        const origin = url.origin;
+        const v = await getCurrentCommit(env, url);
+        const targets = await collectVersionedPdfTargets(env, origin, v, 12);
+        let warmed = 0; let failed = 0;
+        for (const t of targets) {
+          try {
+            const req = new Request(t, { method: 'GET' });
+            // Route through this worker to populate caches.default
+            const res = await fetch(req);
+            if (res.ok) warmed++; else failed++;
+          } catch { failed++; }
+        }
+        // Mark warmed flag for this commit (helps /__warm-status)
+        try {
+          if (v) {
+            const flagReq = new Request('https://warm.local/__warm-flag?v=' + v);
+            const stamp = JSON.stringify({ warmedAt: Date.now() });
+            await caches.default.put(flagReq, new Response(stamp, { status: 200, headers: { 'content-type': 'application/json' } }));
+          }
+        } catch {}
+        return json({ ok: true, warmed, failed, total: targets.length });
+      } catch (e) {
+        return new Response("Warm error", { status: 500 });
+      }
+    }
+
+    // ---------- Warm status (observability) ----------
+    if (path === "/__warm-status" && request.method === "GET") {
+      try {
+        const meta = await getVersionMeta(env, url);
+        const commit = meta.commit || '';
+        if (!commit) return json({ warmed: false, commit: "", warmedAt: null, builtAt: null, builtAtEpoch: null, note: "no version.json commit" });
+        const flagReq = new Request('https://warm.local/__warm-flag?v=' + commit);
+        const hit = await caches.default.match(flagReq);
+        if (!hit) return json({ warmed: false, commit, warmedAt: null, builtAt: meta.builtAt || null, builtAtEpoch: meta.builtAtEpoch || null });
+        let warmedAt = null;
+        try {
+          const t = await hit.text();
+          try { const j = JSON.parse(t); if (j && j.warmedAt) warmedAt = j.warmedAt; } catch {}
+        } catch {}
+        return json({ warmed: true, commit, warmedAt, builtAt: meta.builtAt || null, builtAtEpoch: meta.builtAtEpoch || null });
+      } catch {
+        return new Response("Status error", { status: 500 });
+      }
+    }
+
+  // ---------- Public assets pass-through ----------
+    // (HTML pages, viewer, JS/CSS, thumbnails handled above)
+
+    // Special-case: viewer.html should require auth if it points at protected content
+    if (path === "/viewer.html" && request.method === "GET") {
+      const qsPdf = url.searchParams.get("pdf");
+      if (qsPdf) {
+        try {
+          let raw = qsPdf;
+          try { raw = decodeURIComponent(qsPdf); } catch {}
+          const target = new URL(raw, url);
+          const realm = requiredRealm(target.pathname);
+          if (realm) {
+            const cookies = parseCookies(request.headers.get("cookie") || "");
+            const token = cookies[cookieName(realm)];
+            if (!await verifyToken(token, realm, env.SESSION_SECRET)) {
+              return loginPage(url, realm, env);
+            }
+          }
+        } catch {}
+      }
+    }
+    if (isPublic(path)) {
+      const cached = await maybeServeCachedVersionedPdf(request);
+      if (cached) return cached;
+      {
+        const upstream = await fetchUpstreamAssets(env, request);
+  let resp = tweakAssetCaching(url, upstream);
+        // Populate edge cache for versioned PDFs in background
+        try { ctx.waitUntil(maybePopulateCache(request, resp.clone())); } catch {}
+        // Mark cache status for observability (miss when not served from cache)
+        if (isVersionedPdf(url)) resp = withHeader(resp, 'x-edge-cache', 'miss');
+        return resp;
+      }
+    }
+
+    // ---------- Realm gating ----------
+    const realm = requiredRealm(path);
+    if (!realm) {
+      // no gating for this path
+      const cached = await maybeServeCachedVersionedPdf(request);
+      if (cached) return cached;
+      {
+        const upstream = await fetchUpstreamAssets(env, request);
+  let resp = tweakAssetCaching(url, upstream);
+        try { ctx.waitUntil(maybePopulateCache(request, resp.clone())); } catch {}
+        if (isVersionedPdf(url)) resp = withHeader(resp, 'x-edge-cache', 'miss');
+        return resp;
+      }
+    }
+
+    // Verify cookie for that realm
+    const cookies = parseCookies(request.headers.get("cookie") || "");
+    const token = cookies[cookieName(realm)];
+    if (await verifyToken(token, realm, env.SESSION_SECRET)) {
+      const cached = await maybeServeCachedVersionedPdf(request);
+      if (cached) return cached;
+      {
+        const upstream = await fetchUpstreamAssets(env, request);
+  let resp = tweakAssetCaching(url, upstream);
+        try { ctx.waitUntil(maybePopulateCache(request, resp.clone())); } catch {}
+        if (isVersionedPdf(url)) resp = withHeader(resp, 'x-edge-cache', 'miss');
+        return resp;
+      }
+    }
+
+  // Not authenticated: show login page with return= back to this URL
+  return loginPage(url, realm, env);
+  }
+};
+async function maybeServeCachedVersionedPdf(request) {
+  try {
+    if (request.method !== 'GET') return null;
+    const url = new URL(request.url);
+    const p = url.pathname;
+    const isPdf = /^\/(summons|minutes|appendices|guides\/(?:1|2|3|inst)|other)\/[^/]+\.pdf$/i.test(p);
+    if (!isPdf) return null;
+    if (!url.searchParams.get('v')) return null;
+    // Try exact match first
+    let res = await caches.default.match(request);
+    if (!res) {
+      // Normalize cache key to ignore Range and other request headers
+      const key = new Request(url.toString(), { method: 'GET' });
+      res = await caches.default.match(key);
+      if (res) {
+        const h = new Headers(res.headers);
+        h.set('x-edge-cache', 'hit');
+        return new Response(res.body, { status: res.status, headers: h });
+      }
+    } else {
+      const h = new Headers(res.headers);
+      h.set('x-edge-cache', 'hit');
+      return new Response(res.body, { status: res.status, headers: h });
+    }
+  } catch {}
+  return null;
+}
+
+function maybeEnsureWarm(request, url, env, ctx) {
+  try {
+    if (request.method !== 'GET') return;
+    // Only bother for HTML entry points and viewer
+    const p = url.pathname;
+    const warmCandidates = [
+      '/', '/index.html', '/publications/', '/publications/index.html',
+      '/current/', '/current/index.html', '/meetings/', '/meetings/index.html',
+      '/viewer.html'
+    ];
+    if (!warmCandidates.includes(p)) return;
+    ctx.waitUntil((async () => {
+      const commit = await getCurrentCommit(env, url);
+      if (!commit) return;
+      const token = env.WARM_TOKEN || '';
+      if (!token) return;
+      const flagReq = new Request('https://warm.local/__warm-flag?v=' + commit);
+      const hit = await caches.default.match(flagReq);
+      if (hit) return;
+      // Fire warm in background
+      try {
+        await fetch(new URL('/__warm', url), { method: 'POST', headers: { authorization: 'Bearer ' + token } });
+      } catch {}
+      // Set flag so we don't re-warm this commit
+      try {
+        const stamp = JSON.stringify({ warmedAt: Date.now() });
+        await caches.default.put(flagReq, new Response(stamp, { status: 200, headers: { 'content-type': 'application/json' } }));
+      } catch {}
+    })());
+  } catch {}
+}
+
+/* ================== Helpers & Auth ================== */
+
+function isPublic(p) {
+  // Public HTML/pages/assets (files themselves may be gated by requiredRealm)
+  if (p === "/" || p === "/index.html") return true;
+  if (p.startsWith("/publications/")) return true;
+  if (p.startsWith("/meetings/")) return true;
+  if (p.startsWith("/current/")) return true; // page is public; /current.json is gated above
+  if (p.startsWith("/guides/")) return true;  // page is public; PDFs gated by degree
+  if (p.startsWith("/other/")) return true;   // page public; files/gallery may be gated
+  if (p.startsWith("/assets/")) return true;
+  if (p.startsWith("/vendor/")) return true;
+  if (p === "/viewer.html") return true;
+  if (p.startsWith("/thumbnails/")) return true; // handled above
+  if (p === "/version.json") return true; // small metadata file
+  return false;
+}
+
+function requiredRealm(p) {
+  // Members-only areas
+  if (p === "/current.json") return "members"; // current bundle data
+  if (p.startsWith("/minutes/") && /\.pdf$/i.test(p)) return "members";
+  if (p === "/minutes/gallery.json") return "members";
+  if (p === "/minutes" || p === "/minutes/") return "members"; // entry shows login
+  // Appendices are members-only
+  if (p.startsWith("/appendices/") && (p.endsWith(".pdf") || p.endsWith("/gallery.json"))) return "members";
+  if (p === "/appendices" || p === "/appendices/") return "members";
+  if (p.startsWith("/other/") && (p.endsWith(".pdf") || p.endsWith("/gallery.json"))) return "members";
+
+  // Summons: archive PDFs are members-only; "current.pdf" already handled above and left public
+  if (p.startsWith("/summons/") && /\.pdf$/i.test(p) && !p.endsWith("/current.pdf")) {
+    // Numbered summons PDFs are members-only
+    return "members";
+  }
+  // Summons gallery requires members
+  if (p === "/summons/gallery.json") return "members";
+  // Entry path triggers login UI when not signed in
+  if (p === "/summons" || p === "/summons/") return "members";
+
+  // Guides: files gated by degree
+  if (p.startsWith("/guides/1/") && /\.pdf$/i.test(p)) return "g1";
+  if (p.startsWith("/guides/2/") && /\.pdf$/i.test(p)) return "g2";
+  if (p.startsWith("/guides/3/") && /\.pdf$/i.test(p)) return "g3";
+  if (p.startsWith("/guides/inst/") && /\.pdf$/i.test(p)) return "inst";
+  if (p === "/guides/1" || p === "/guides/1/") return "g1";
+  if (p === "/guides/2" || p === "/guides/2/") return "g2";
+  if (p === "/guides/3" || p === "/guides/3/") return "g3";
+  if (p === "/guides/inst" || p === "/guides/inst/") return "inst";
+
+  return null;
+}
+
+function cookieName(realm) {
+  return `auth_${realm}`;
+}
+
+function parseCookies(str) {
+  const out = {};
+  str.split(";").forEach(p => {
+    const i = p.indexOf("=");
+    if (i > -1) out[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim());
+  });
+  return out;
+}
+
+async function handleAuth(request, env) {
+  const form = await request.formData();
+  const realm = String(form.get("realm") || "");
+  const pw = String(form.get("password") || "");
+
+  // Choose expected password per realm (from env)
+  const expected = (
+    realm === "members" ? env.MEMBERS_PASSWORD :
+    realm === "guest"   ? env.GUEST_PASSWORD :
+    realm === "g1"      ? env.G1_PASSWORD :
+    realm === "g2"      ? env.G2_PASSWORD :
+    realm === "g3"      ? env.G3_PASSWORD :
+    realm === "inst"    ? env.INST_PASSWORD :
+    ""
+  ) || "";
+
+  const ok = expected && pw && (pw === expected);
+  if (!ok) {
+    // Back to login with error
+    const ret = form.get("return") || "/";
+    const u = new URL(ret, request.url);
+    u.searchParams.set("error", "1");
+    return Response.redirect(u.toString(), 302);
+  }
+
+  // Set session cookie (HMAC token)
+  const token = await signToken(realm, env.SESSION_SECRET, 7 * 24 * 3600); // 7 days
+  const cookie = `${cookieName(realm)}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${7*24*3600}`;
+
+  const to = new URL(form.get("return") || "/", request.url);
+  return new Response(null, {
+    status: 302,
+    headers: {
+      "set-cookie": cookie,
+      "location": to.toString()
+    }
+  });
+}
+
+function handleLogout(url) {
+  const headers = new Headers();
+  for (const r of ["members", "guest", "g1", "g2", "g3", "inst"]) {
+    headers.append("Set-Cookie", `${cookieName(r)}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
+  }
+  const ret = url.searchParams.get("return") || "/";
+  const html = `<!doctype html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signed out — Hundred Elms Lodge</title>
+<meta http-equiv="refresh" content="4;url=${escapeHtml(ret)}">
+<style>
+:root{--bg:#0f1115;--panel:#151821;--text:#eef3ff;--muted:#a9b4cf;--ring:#2c3756}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui}
+.wrap{min-height:100%;display:grid;place-items:center;padding:24px}
+.card{background:var(--panel);border:1px solid var(--ring);border-radius:12px;max-width:460px;width:100%;padding:22px;text-align:center}
+.logo{display:flex;gap:10px;justify-content:center;align-items:center;margin-bottom:12px}
+.logo img{height:32px}
+h1{font-size:20px;margin:8px 0}
+p{margin:8px 0;color:var(--muted)}
+.actions{display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+.btn{background:#1b1f2a;border:1px solid var(--ring);padding:8px 12px;border-radius:10px;color:#fff;text-decoration:none}
+.btn:hover{border-color:#3c4a75}
+</style></head>
+<body>
+<div class="wrap"><div class="card">
+  <div class="logo"><img src="/assets/l5749-logo.png" alt=""><strong>Hundred Elms Lodge No. 5749</strong></div>
+  <h1>You’re signed out</h1>
+  <p>You’ll be redirected in a few seconds.</p>
+  <div class="actions">
+    <a class="btn" href="/">Go to homepage</a>
+    <a class="btn" href="${escapeHtml(ret)}">Return to previous page</a>
+  </div>
+</div></div>
+</body></html>`;
+  headers.set("content-type", "text/html; charset=utf-8");
+  return new Response(html, { status: 200, headers });
+}
+
+function loginPage(url, realm, env) {
+  const ret = url.searchParams.get("return") || url.toString();
+  const err = url.searchParams.get("error") ? `<p style="color:#ffb4b4;margin:0 0 10px">Incorrect password. Please try again.</p>` : "";
+  const realmTitle = (
+    realm === "members" ? "Members" :
+    realm === "guest" ? "Guest" :
+    realm === "g1" ? "First Degree" :
+    realm === "g2" ? "Second Degree" :
+    realm === "g3" ? "Third Degree" :
+    realm === "inst" ? "Installation" : "Protected"
+  );
+
+  const hints = {
+    members: env?.MEMBERS_HINT || "",
+    guest: env?.GUEST_HINT || "",
+    g1: env?.G1_HINT || "",
+    g2: env?.G2_HINT || "",
+    g3: env?.G3_HINT || "",
+    inst: env?.INST_HINT || ""
+  };
+  const hint = hints[realm] || "";
+
+  const html = `<!doctype html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in — ${realmTitle}</title>
+<style>
+:root{--bg:#0f1115;--panel:#151821;--text:#eef3ff;--muted:#a9b4cf;--ring:#2c3756;--link:#9ecbff}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui}
+.wrap{min-height:100%;display:grid;place-items:center;padding:24px}
+.card{background:var(--panel);border:1px solid var(--ring);border-radius:12px;max-width:460px;width:100%;padding:22px}
+h1{font-size:20px;margin:0 0 8px}
+label{display:block;margin:10px 0 6px}
+input[type="password"]{width:100%;padding:10px;border-radius:10px;border:1px solid var(--ring);background:#0f1115;color:#fff}
+button{margin-top:12px;background:#1b1f2a;border:1px solid var(--ring);padding:10px 12px;border-radius:10px;color:#fff;cursor:pointer}
+a{color:var(--link);text-decoration:none}
+.hint{margin-top:8px;color:#a9b4cf;font-size:12px}
+</style></head>
+<body>
+<div class="wrap"><div class="card">
+  <p><a href="/">← Home</a></p>
+  <h1>${realmTitle} access</h1>
+  ${err}
+  <form method="post" action="/__auth">
+    <input type="hidden" name="realm" value="${escapeHtml(realm)}"/>
+    <input type="hidden" name="return" value="${escapeHtml(ret)}"/>
+    <label>Password</label>
+    <input type="password" name="password" autocomplete="current-password" required title="${escapeHtml(hint)}" />
+    ${hint ? `<div class="hint">A hint is below, ask the Secretary if you get stuck!</div>` : ""}
+    ${hint ? `<div class="hint">${escapeHtml(hint)}</div>` : ""}
+    <button type="submit">Sign in</button>
+  </form>
+</div></div>
+</body></html>`;
+  return new Response(html, { status: 401, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+}
+
+/* ---------- Token signing/verification ---------- */
+
+async function signToken(realm, secret, maxAgeSeconds) {
+  const exp = Math.floor(Date.now() / 1000) + (maxAgeSeconds || 0);
+  const payload = `${realm}.${exp}`;
+  const sig = await hmacHex(secret, payload);
+  return `${payload}.${sig}`;
+}
+
+async function verifyToken(token, realm, secret) {
+  if (!token || !realm) return false;
+  const parts = token.split(".");
+  if (parts.length !== 3) return false;
+  const [r, expStr, sig] = parts;
+  if (r !== realm) return false;
+  const exp = parseInt(expStr, 10);
+  if (!Number.isFinite(exp) || exp < Math.floor(Date.now() / 1000)) return false;
+  const expected = await hmacHex(secret, `${r}.${exp}`);
+  return timingSafeEq(sig, expected);
+}
+
+async function hmacHex(key, data) {
+  const enc = new TextEncoder();
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", enc.encode(String(key)), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(String(data)));
+  return [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function timingSafeEq(a, b) {
+  if (a.length !== b.length) return false;
+  let r = 0;
+  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return r === 0;
+}
+
+/* ---------- cache control ---------- */
+function tweakAssetCaching(url, upstream) {
+  const p = url.pathname;
+  const h = new Headers(upstream.headers);
+
+  // PDFs: keep existing versioned caching logic
+  if (/^\/(summons|minutes|appendices|guides\/(?:1|2|3|inst)|other)\/[^/]+\.pdf$/i.test(p)) {
+    let cc = 'no-store, no-cache, must-revalidate';
+    if (url.searchParams.get('v')) cc = 'private, max-age=2592000, immutable';
+    h.set('cache-control', cc);
+    if (!h.has('accept-ranges')) h.set('accept-ranges', 'bytes');
+    return new Response(upstream.body, { status: upstream.status, headers: h });
+  }
+
+  // Vendor scripts and static assets: long-lived immutable
+  if (p.startsWith('/vendor/') && /\.(?:js|mjs)$/.test(p)) {
+    h.set('cache-control', 'public, max-age=31536000, immutable');
+    return new Response(upstream.body, { status: upstream.status, headers: h });
+  }
+  if (p.startsWith('/assets/') && /\.(?:png|jpg|jpeg|svg|gif|webp|ico|css|js)$/.test(p)) {
+    h.set('cache-control', 'public, max-age=31536000, immutable');
+    return new Response(upstream.body, { status: upstream.status, headers: h });
+  }
+
+  // Default: pass through
+  return upstream;
+}
+
+
+/* ---------- small utils ---------- */
+
+function json(obj) {
+  return new Response(JSON.stringify(obj), {
+    status: 200,
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
+  });
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
+}
+
+async function maybePopulateCache(request, response) {
+  try {
+    if (request.method !== 'GET') return;
+    const url = new URL(request.url);
+    const isPdf = /^\/(summons|minutes|appendices|guides\/(?:1|2|3|inst)|other)\/[^/]+\.pdf$/i.test(url.pathname);
+    if (!isPdf) return;
+    if (!url.searchParams.get('v')) return;
+    if (response.status !== 200) return;
+    // Honor Cache-Control: immutable private set by tweakPdfCaching
+    const key = new Request(url.toString(), { method: 'GET' });
+    await caches.default.put(key, response.clone());
+  } catch {}
+}
+
+/* ---------- warm helpers ---------- */
+async function getCurrentCommit(env, url) {
+  try {
+    const r = await env.ASSETS.fetch(new Request(new URL('/version.json', url), { method: 'GET' }));
+    if (r.ok) { const j = await r.json().catch(()=>null); if (j?.commit) return j.commit; }
+  } catch {}
+  return '';
+}
+
+async function getVersionMeta(env, url) {
+  try {
+    const r = await env.ASSETS.fetch(new Request(new URL('/version.json', url), { method: 'GET' }));
+    if (r.ok) {
+      const j = await r.json().catch(()=>null);
+      if (j) return { commit: j.commit || '', builtAt: j.builtAt || null, builtAtEpoch: j.builtAtEpoch || null };
+    }
+  } catch {}
+  return { commit: '', builtAt: null, builtAtEpoch: null };
+}
+
+async function collectVersionedPdfTargets(env, origin, v, limitPerGallery) {
+  // Build a set of absolute URLs to versioned PDFs to warm
+  const urls = new Set();
+
+  function withV(p) {
+    const u = new URL(p, origin);
+    if (v) u.searchParams.set('v', v);
+    return u.toString();
+  }
+
+  try {
+    // Current bundle
+    const curRes = await env.ASSETS.fetch(new Request(`${origin}/current.json`, { method: 'GET' }));
+    if (curRes.ok) {
+      const cur = await curRes.json().catch(()=>null);
+      if (cur?.summons) {
+        urls.add(withV(cur.summons));
+        urls.add(withV('/summons/current.pdf')); // warm alias path too
+      }
+      if (cur?.minutes) urls.add(withV(cur.minutes));
+      if (Array.isArray(cur?.appendices)) {
+        for (const a of cur.appendices) if (a?.path) urls.add(withV(a.path));
+      }
+    }
+  } catch {}
+
+  // Helper to add first N items from a gallery
+  async function addGallery(prefix) {
+    try {
+      const r = await env.ASSETS.fetch(new Request(`${origin}/${prefix}/gallery.json`, { method: 'GET' }));
+      if (!r.ok) return;
+      const arr = await r.json().catch(()=>[]);
+      let count = 0;
+      for (const it of arr) {
+        if (it?.path && /\.pdf$/i.test(it.path)) {
+          urls.add(withV(it.path));
+          count++;
+        }
+        if (count >= (limitPerGallery || 10)) break;
+      }
+    } catch {}
+  }
+
+  await addGallery('summons');
+  await addGallery('minutes');
+  await addGallery('appendices');
+  await addGallery('other');
+
+  return [...urls];
+}
+
+function isVersionedPdf(url) {
+  try {
+    const isPdf = /^\/(summons|minutes|appendices|guides\/(?:1|2|3|inst)|other)\/[^/]+\.pdf$/i.test(url.pathname);
+    return isPdf && !!url.searchParams.get('v');
+  } catch { return false; }
+}
+
+function withHeader(resp, name, value) {
+  try {
+    const h = new Headers(resp.headers);
+    h.set(String(name), String(value));
+    return new Response(resp.body, { status: resp.status, headers: h });
+  } catch {
+    return resp;
+  }
+}
+
+async function fetchUpstreamAssets(env, request) {
+  try {
+    const u = new URL(request.url);
+    if (isVersionedPdf(u)) {
+      // Avoid 304s so we can cache a 200 body at the edge
+      const h = new Headers(request.headers);
+      h.delete('if-none-match');
+      h.delete('if-modified-since');
+      const clean = new Request(u.toString(), { method: request.method, headers: h });
+      return await env.ASSETS.fetch(clean);
+    }
+  } catch {}
+  return await env.ASSETS.fetch(request);
+}

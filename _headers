@@ -1,0 +1,26 @@
+/summons/*.pdf
+  Cache-Control: no-cache, must-revalidate
+
+/summons/current.pdf
+  Cache-Control: no-store, no-cache, must-revalidate
+
+/minutes/*.pdf
+  Cache-Control: private, no-store
+
+/summons/gallery.json
+  Cache-Control: no-cache
+
+/minutes/gallery.json
+  Cache-Control: no-cache
+
+/appendices/gallery.json
+  Cache-Control: no-cache
+
+/current.json
+  Cache-Control: no-store, no-cache, must-revalidate
+
+/thumbnails/summons/current.jpg
+  Cache-Control: public, max-age=300
+
+/viewer.html
+  Cache-Control: no-store
