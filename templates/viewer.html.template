@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>{{LODGE_SHORT_NAME}} Flip-Book Viewer</title>
+<link rel="icon" type="image/png" href="{{LOGO_PATH}}">
+<link rel="apple-touch-icon" href="{{LOGO_PATH}}">
+<link rel="shortcut icon" type="image/png" href="{{LOGO_PATH}}">
+<script type="module">
+  // Compute build version early for preloads
+  let __v_pre = 'dev';
+  try { const r = await fetch('/version.json', { cache: 'no-store' }); if (r.ok) { const j = await r.json(); __v_pre = j.commit || 'dev'; } } catch {}
+  const hd = document.head;
+  for (const [href, as] of [[`/vendor/pdf.worker.mjs?v=${encodeURIComponent(__v_pre)}`, 'script'], [`/vendor/pdf.min.mjs?v=${encodeURIComponent(__v_pre)}`, 'script'], ['/vendor/page-flip.browser.js', 'script']]) {
+    const l = document.createElement('link');
+    l.rel = 'preload'; l.as = as; l.href = href; l.crossOrigin = '';
+    hd.appendChild(l);
+  }
+</script>
+<link rel="preload" as="script" href="/vendor/page-flip.browser.js" crossorigin>
+<style>
+  :root{--bg:#0f1115;--bg2:#151821;--text:#eef3ff;--ring:#2c3756;--link:#9ecbff}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui}
+  header{display:flex;gap:.75rem;align-items:center;padding:10px 14px;background:var(--bg2);
+         position:sticky;top:0;border-bottom:1px solid var(--ring);z-index:10}
+  header a{color:var(--link);text-decoration:none}
+  header .spacer{flex:1}
+  .btn{background:#1b1f2a;border:1px solid var(--ring);padding:6px 10px;border-radius:10px;
+       color:var(--text);text-decoration:none;margin-left:8px;cursor:pointer}
+  .btn:hover{border-color:#3c4a75}
+
+  #flipbook{height:calc(100vh - 52px); width:100%; margin:0 auto}
+
+  /* Show only the RIGHT half initially (true single cover, no reflow). */
+  #flipbook.cover-clip { clip-path: inset(0 0 0 50%); }
+  @supports not (clip-path: inset(0)) {
+    #flipbook.cover-clip { overflow:hidden; position:relative; }
+    #flipbook.cover-clip > * { position:relative; left:-50%; }
+  }
+
+  #loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg)}
+
+  .nav {position:fixed;top:60px;z-index:15;opacity:.5}
+  .nav button{background:#1b1f2a;border:1px solid var(--ring);color:#fff;padding:6px 10px;border-radius:10px;cursor:pointer}
+  .nav-left {left:10px}
+  .nav-right{right:10px}
+</style>
+</head>
+<body>
+<header class="site-header"
+  data-crumbs='[["/"]]'
+  data-back-text="Home" data-back-href="/"
+  data-title="Hundred Elms Lodge No. 5749 - Document Viewer">
+  <img class="logo" src="/assets/l5749-logo.png" alt="L5749 logo">
+  <nav class="crumbs" aria-label="Breadcrumb"></nav>
+  <h1 class="page-title"></h1>
+</header>
+<style>
+  .viewer-actions{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid #2c3756;background:#151821}
+  .viewer-actions .btn{background:#1b1f2a;border:1px solid #2c3756;color:#eef3ff;padding:8px 10px;border-radius:10px;text-decoration:none;cursor:pointer}
+  .viewer-actions .btn:hover{border-color:#3c4a75}
+</style>
+
+<div class="viewer-actions">
+  <a id="btn-open" class="btn" href="#" target="_blank" rel="noopener">Open PDF</a>
+  <a id="btn-download" class="btn" href="#" download>Download PDF</a>
+  <button id="btn-print" class="btn" type="button">Print</button>
+</div>
+<script type="module">
+  let v='dev';
+  try{ const r=await fetch('/version.json',{cache:'no-store'}); if(r.ok){ const j=await r.json(); v=j.commit||'dev'; } }catch{}
+  await import(`/assets/header.js?v=${encodeURIComponent(v)}`);
+</script>
+<style>
+  .site-header{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--bg2);border-bottom:1px solid var(--ring)}
+  .site-header .logo{height:26px}
+  .site-header .crumbs{display:flex;gap:8px;align-items:center;white-space:nowrap;overflow:auto}
+  .site-header .crumbs a{color:var(--link);text-decoration:none}
+  .site-header .sep{opacity:.5}
+  .site-header .spacer{flex:1}
+  .site-header .back{margin-left:8px;color:var(--link);text-decoration:none}
+  .site-header .page-title{font-size:18px;margin:0}
+  .site-header .logout{background:#1b1f2a;border:1px solid var(--ring);padding:6px 10px;border-radius:8px;color:#fff;text-decoration:none}
+  .site-header .logout:hover{border-color:#3c4a75}
+</style>
+  <div class="nav nav-left"><button id="prevBtn">◀</button></div>
+  <div class="nav nav-right"><button id="nextBtn">▶</button></div>
+
+  <div id="loading">Loading…</div>
+  <div id="flipbook"></div>
+
+  <!-- StPageFlip UMD -->
+  <script src="/vendor/page-flip.browser.js"></script>
+
+  <!-- pdf.js ESM + viewer logic -->
+  <script type="module">
+  import * as pdfjsLib from '/vendor/pdf.min.mjs';
+  let __v = 'dev';
+  try { const vr = await fetch('/version.json', { cache: 'no-store' }); if (vr.ok) { const j = await vr.json(); __v = j.commit || 'dev'; } } catch {}
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdf.worker.mjs?v=' + encodeURIComponent(__v);
+
+
+    const params = new URLSearchParams(location.search);
+    let pdfUrl = params.get('pdf');
+    if (!pdfUrl) { location.replace('/'); throw new Error('No pdf param'); }
+
+    // Resolve /summons/current.pdf to the numbered file to avoid redirects
+    try {
+      const u = new URL(pdfUrl, location.href);
+      if (/^\/summons\/current\.pdf$/i.test(u.pathname)) {
+        const head = await fetch(u.toString(), { method: 'HEAD', redirect: 'manual', cache: 'no-store' });
+        const loc = head.headers.get('location');
+        if (loc) pdfUrl = new URL(loc, u).toString();
+      }
+    } catch {}
+
+    // UI: wire up action buttons
+    const fileName = new URL(pdfUrl, location.href).pathname.split('/').pop();
+    const openBtn = document.getElementById('btn-open');
+    if (openBtn) openBtn.href = pdfUrl;
+
+    const downloadBtn = document.getElementById('btn-download');
+    if (downloadBtn) {
+      downloadBtn.href = pdfUrl;
+      if (fileName) downloadBtn.setAttribute('download', fileName);
+    }
+
+    const printBtn = document.getElementById('btn-print');
+    if (printBtn) {
+      printBtn.addEventListener('click', () => {
+        try {
+          const w = window.open(pdfUrl, '_blank', 'noopener');
+          if (w) w.focus();
+        } catch (e) {
+          location.href = pdfUrl;
+        }
+      });
+    }
+
+    // Optional: reflect file name in header title if present
+    const titleEl = document.querySelector('.page-title');
+    if (titleEl && fileName) titleEl.textContent = fileName;
+
+    // --------- Preflight auth: if the PDF is protected, go to login first ---------
+    try {
+      const head = await fetch(pdfUrl, { method: 'HEAD', cache: 'no-store' });
+      if (head.status === 401) {
+        const back = location.href;
+        const sep = String(pdfUrl).includes('?') ? '&' : '?';
+        // Navigate to the protected PDF itself with a return param.
+        // The worker/gateway will render the login for the correct realm, then bounce back here.
+        location.href = `${pdfUrl}${sep}return=${encodeURIComponent(back)}`;
+        throw new Error('redirecting-to-login');
+      }
+    } catch (e) {
+      if (String(e).includes('redirecting-to-login')) { /* navigation takes over */ }
+      else { console.error(e); }
+    }
+    // ------------------------------------------------------------------------------
+
+    // Load PDF
+    const pdf = await pdfjsLib.getDocument({ url: pdfUrl }).promise;
+
+  // First page -> base size / render quality (auto-tune for large docs)
+  const first = await pdf.getPage(1);
+  let baseScale = 1.5;
+  if (pdf.numPages > 40) baseScale = 1.0;
+  else if (pdf.numPages > 20) baseScale = 1.2;
+  const vp1   = first.getViewport({ scale: baseScale });
+    const baseW = Math.round(vp1.width);
+    const baseH = Math.round(vp1.height);
+
+    // Helper: render a page to PNG data URL at exactly baseW x baseH
+    async function pageToDataURL(page, preVp = null) {
+      const viewport = preVp ?? page.getViewport({
+        scale: baseW / page.getViewport({ scale: 1 }).width
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      const ctx = canvas.getContext('2d', { alpha: false });
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      return canvas.toDataURL('image/png');
+    }
+
+    // Build images array with concurrency
+    const images = new Array(pdf.numPages);
+    images[0] = await pageToDataURL(first, vp1);
+    const concurrency = Math.min(4, (navigator.hardwareConcurrency || 4));
+    let next = 2;
+    const workers = new Set();
+    async function spawn() {
+      const pIndex = next++;
+      if (pIndex > pdf.numPages) return;
+      const pr = (async () => {
+        const page = await pdf.getPage(pIndex);
+        images[pIndex - 1] = await pageToDataURL(page);
+      })().finally(() => workers.delete(pr));
+      workers.add(pr);
+    }
+    // Prime pool
+    const initial = Math.min(concurrency, Math.max(0, pdf.numPages - 1));
+    for (let i = 0; i < initial; i++) await spawn();
+    // Refill until all pages rendered
+    while (workers.size) {
+      await Promise.race([...workers]);
+      await spawn();
+    }
+    // Pad if odd so final spread is tidy
+    if (images.length % 2 === 1) {
+      const pad = document.createElement('canvas');
+      pad.width = baseW; pad.height = baseH;
+      const ctx = pad.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,baseW,baseH);
+      images.push(pad.toDataURL('image/png'));
+    }
+
+    // Init PageFlip (cover mode, curls on)
+    const flipEl = document.getElementById('flipbook');
+    const flip = new St.PageFlip(flipEl, {
+      width: baseW,
+      height: baseH,
+      size: 'fixed',
+      showCover: true,        // page 1 alone (right)
+      usePortrait: true,      // single page when container is narrow
+      startPage: 0,
+      maxShadowOpacity: 0.4,
+      mobileScrollSupport: true,
+      showPageCorners: true,  // curled corner cue
+      drawShadow: true,
+      flippingTime: 700,
+      useMouseEvents: true
+    });
+
+    // Load and open at cover
+    document.getElementById('loading').remove();
+    flip.loadFromImages(images);
+    flip.turnToPage(0, 'hard');
+
+    // Hide the empty left half on the cover without resizing the book
+    flipEl.classList.add('cover-clip');
+
+    // On first interaction/flip, reveal full spread (remove clip) — no reflow
+    const exitCover = () => flipEl.classList.remove('cover-clip');
+    try { flip.on('flip', exitCover); } catch {}
+    flipEl.addEventListener('pointerdown', exitCover, { once:true });
+    document.getElementById('nextBtn').addEventListener('click', exitCover, { once:true });
+    document.getElementById('prevBtn').addEventListener('click', exitCover, { once:true });
+
+    // Controls
+    document.getElementById('prevBtn').onclick = () => flip.flipPrev('hard');
+    document.getElementById('nextBtn').onclick = () => flip.flipNext('hard');
+
+    // Keyboard nav
+    addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight') { exitCover(); flip.flipNext('hard'); }
+      if (e.key === 'ArrowLeft')  { exitCover(); flip.flipPrev('hard'); }
+    });
+  </script>
+</body>
+</html>

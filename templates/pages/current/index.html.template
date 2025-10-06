@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Current Meeting — {{LODGE_FULL_NAME}}</title>
+<link rel="icon" type="image/png" href="{{LOGO_PATH}}">
+<style>
+  :root{--bg:#0f1115;--bg2:#151821;--card:#1b1f2a;--text:#eef3ff;--muted:#a9b4cf;--ring:#2c3756}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui}
+  header{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--bg2);border-bottom:1px solid var(--ring)}
+  header a{color:#9ecbff;text-decoration:none}
+  main{max-width:1000px;margin:24px auto;padding:0 16px}
+  .row{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+  .card{background:var(--card);border-radius:12px;overflow:hidden;border:1px solid var(--ring);color:inherit;text-decoration:none}
+  .thumb{aspect-ratio:3/4;background:#0b0d12;display:grid;place-items:center}
+  .thumb img{max-width:100%;max-height:100%;display:block}
+  .meta{padding:10px 12px;display:flex;justify-content:space-between;gap:8px}
+  .btn{background:var(--card);border:1px solid var(--ring);color:var(--text);padding:8px 10px;border-radius:10px;text-decoration:none;cursor:pointer}
+  .muted{color:var(--muted)}
+</style>
+</head>
+<body>
+<header class="site-header"
+  data-crumbs='[["/","Current Meeting Pack"]]'
+  data-back-text="Home" data-back-href="/"
+  data-title="{{LODGE_FULL_NAME}} — Current Meeting Pack">
+  <img class="logo" src="{{LOGO_PATH}}" alt="{{LODGE_SHORT_NAME}} logo">
+  <nav class="crumbs" aria-label="Breadcrumb"></nav>
+  <h1 class="page-title"></h1>
+</header>
+<script type="module" src="/assets/header.js"></script>
+<style>
+  .site-header{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--bg2);border-bottom:1px solid var(--ring)}
+  .site-header .logo{height:26px}
+  .site-header .crumbs{display:flex;gap:8px;align-items:center;white-space:nowrap;overflow:auto}
+  .site-header .crumbs a{color:var(--link);text-decoration:none}
+  .site-header .sep{opacity:.5}
+  .site-header .spacer{flex:1}
+  .site-header .back{margin-left:8px;color:var(--link);text-decoration:none}
+  .site-header .page-title{font-size:18px;margin:0}
+  .site-header .logout{background:#1b1f2a;border:1px solid var(--ring);padding:6px 10px;border-radius:8px;color:#fff;text-decoration:none}
+  .site-header .logout:hover{border-color:#3c4a75}
+</style>
+<main>
+  <h1>Current Meeting Documents</h1>
+  <p class="muted">You'll be asked to sign in if required.</p>
+  <div id="list" class="row"></div>
+</main>
+<script type="module">
+  const $ = s => document.querySelector(s);
+  const thumb = p => '/thumbnails' + new URL(p, location.origin).pathname.replace(/\.pdf$/i,'.jpg');
+
+  async function getBuildVersion(){
+    try{ const r = await fetch('/version.json',{cache:'no-store'}); if (r.ok){ const j = await r.json(); return j.commit||'dev'; } }catch{}
+    return 'dev';
+  }
+
+  async function load(){
+    const mount = $('#list');
+    const res = await fetch('/current.json', {cache:'no-store'});
+    if (res.status === 401){
+      mount.replaceChildren(
+        el('p',{class:'muted',text:'Members only.'}),
+        el('a',{class:'btn',href:`/summons/?return=${encodeURIComponent(location.href)}`},'Sign in to view')
+      );
+      return;
+    }
+    if (!res.ok){ mount.textContent = 'Unavailable.'; return; }
+  const cur = await res.json();
+  const v = await getBuildVersion();
+    const cards = [];
+
+    if (cur.summons){
+      cards.push(card(withV(cur.summons, v), 'Summons', `Meeting ${cur.meeting}`));
+    }
+    if (cur.minutes){
+      cards.push(card(withV(cur.minutes, v), 'Minutes', 'Previous meeting'));
+    }
+    if (Array.isArray(cur.appendices)){
+      for (const a of cur.appendices){
+        cards.push(card(withV(a.path, v), 'Appendix', a.title || ''));
+      }
+    }
+    mount.replaceChildren(...cards);
+  }
+
+  function withV(url, v){
+    try{
+      const u = new URL(url, location.origin);
+      if (!u.searchParams.has('v')) u.searchParams.set('v', v);
+      return u.toString();
+    }catch{ return url; }
+  }
+
+  function el(tag, props={}, ...kids){
+    const n = document.createElement(tag);
+    for (const [k,v] of Object.entries(props)){
+      if (k==='class') n.className = v;
+      else if (k==='text') n.textContent = v;
+      else n.setAttribute(k,v);
+    }
+    kids.forEach(k=>n.appendChild(typeof k==='string'?document.createTextNode(k):k));
+    return n;
+  }
+  function card(pdf, title, note){
+    const a = el('a', {class:'card', href:'/viewer.html?pdf='+encodeURIComponent(pdf)});
+    a.append(
+      el('div',{class:'thumb'}, el('img',{src:thumb(pdf),alt:title,loading:'lazy',decoding:'async'})),
+      el('div',{class:'meta'}, el('strong',{text:title}), el('span',{class:'muted',text:note}))
+    );
+    return a;
+  }
+  load();
+</script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Ritual Guides — {{LODGE_FULL_NAME}}</title>
+<link rel="icon" type="image/png" href="{{LOGO_PATH}}">
+<style>
+  :root{--bg:#0f1115;--bg2:#151821;--card:#1b1f2a;--text:#eef3ff;--muted:#a9b4cf;--ring:#2c3756}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Roboto,Inter,Arial}
+  header{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--bg2);border-bottom:1px solid var(--ring)}
+  header a{color:#9ecbff;text-decoration:none}
+  main{max-width:1000px;margin:24px auto;padding:0 16px}
+  section{margin-top:28px}
+  h1{margin:0 0 6px;font-size:22px}
+  h2{margin:0 0 10px}
+  p.hint{margin:0 0 14px;color:var(--muted)}
+  .row{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+  .card{background:var(--card);border-radius:12px;overflow:hidden;border:1px solid var(--ring);color:inherit;text-decoration:none}
+  .thumb{aspect-ratio:3/4;background:#0b0d12;display:grid;place-items:center}
+  .thumb img{max-width:100%;max-height:100%;display:block}
+  .meta{padding:10px 12px;display:flex;justify-content:space-between;gap:8px}
+  .btn{background:var(--card);border:1px solid var(--ring);color:var(--text);padding:8px 10px;border-radius:10px;text-decoration:none;cursor:pointer}
+  .btn:hover{border-color:#3c4a75}
+  .muted{color:var(--muted)}
+</style>
+</head>
+<body>
+<header class="site-header"
+  data-crumbs='[["/","Guides"]]'
+  data-back-text="Home" data-back-href="/"
+  data-title="{{LODGE_FULL_NAME}} — Guides">
+  <img class="logo" src="{{LOGO_PATH}}" alt="{{LODGE_SHORT_NAME}} logo">
+  <nav class="crumbs" aria-label="Breadcrumb"></nav>
+  <h1 class="page-title"></h1>
+</header>
+<script type="module" src="/assets/header.js"></script>
+<style>
+  .site-header{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--bg2);border-bottom:1px solid var(--ring)}
+  .site-header .logo{height:26px}
+  .site-header .crumbs{display:flex;gap:8px;align-items:center;white-space:nowrap;overflow:auto}
+  .site-header .crumbs a{color:var(--link);text-decoration:none}
+  .site-header .sep{opacity:.5}
+  .site-header .spacer{flex:1}
+  .site-header .back{margin-left:8px;color:var(--link);text-decoration:none}
+  .site-header .page-title{font-size:18px;margin:0}
+  .site-header .logout{background:#1b1f2a;border:1px solid var(--ring);padding:6px 10px;border-radius:8px;color:#fff;text-decoration:none}
+  .site-header .logout:hover{border-color:#3c4a75}
+</style>
+<main>
+  <h1>Ritual Guides</h1>
+  <p class="hint">This page is open, but files are protected by degree passwords. You'll be asked on first open.</p>
+
+  <section id="g1">
+    <h2>First Degree</h2>
+    <p class="hint">Password format: all lowercase.</p>
+    <div class="row"></div>
+  </section>
+
+  <section id="g2">
+    <h2>Second Degree</h2>
+    <p class="hint">Password format: all lowercase.</p>
+    <div class="row"></div>
+  </section>
+
+  <section id="g3">
+    <h2>Third Degree</h2>
+    <p class="hint">Password format: lowercase with no spaces.</p>
+    <div class="row"></div>
+  </section>
+
+  <section id="gI">
+    <h2>Installation</h2>
+    <div class="row"></div>
+  </section>
+</main>
+
+<script type="module">
+  const $ = s => document.querySelector(s);
+  const thumbUrl = p => '/thumbnails' + new URL(p, location.origin).pathname.replace(/\.pdf$/i,'.jpg');
+
+  function mk(el, props={}, ...kids){
+    const n = document.createElement(el);
+    for (const [k,v] of Object.entries(props)) {
+      if (k==='class') n.className = v;
+      else if (k==='text') n.textContent = v;
+      else n.setAttribute(k,v);
+    }
+    kids.forEach(k => n.appendChild(typeof k==='string' ? document.createTextNode(k) : k));
+    return n;
+  }
+
+  async function loadSection(jsonPath, mountSel, signinPath){
+    const mount = document.querySelector(`${mountSel} .row`);
+    try {
+      const res = await fetch(jsonPath, { cache:'no-store' });
+      if (res.status === 401) {
+        mount.replaceChildren(
+          mk('p', {class:'muted', text: 'Members only.'}),
+          mk('a', {class:'btn', href: `${signinPath}?return=${encodeURIComponent(location.href)}`}, 'Sign in to view')
+        );
+        return;
+      }
+      if (res.status === 404) { mount.textContent = 'Nothing here yet.'; return; }
+      if (!res.ok) throw new Error('HTTP '+res.status);
+
+      const data = await res.json();
+      if (!Array.isArray(data) || data.length === 0) {
+        mount.textContent = 'Nothing here yet.'; return;
+      }
+
+      const cards = data.map(item => {
+        const a = mk('a', {class:'card', href:'/viewer.html?pdf='+encodeURIComponent(item.path)});
+        const img = mk('img', {src: thumbUrl(item.path), alt: String(item.title||'Guide'), loading:'lazy', decoding:'async'});
+        a.append(
+          mk('div',{class:'thumb'}, img),
+          mk('div',{class:'meta'}, mk('strong',{text:String(item.title||'Guide')}), mk('span',{class:'muted', text:String(item.note||'')}))
+        );
+        return a;
+      });
+      mount.replaceChildren(...cards);
+    } catch (e) {
+      console.error(jsonPath, e);
+      mount.textContent = 'Unavailable.';
+    }
+  }
+
+  // Load all four sections
+  loadSection('/guides/1/gallery.json',   '#g1', '/guides/1/');
+  loadSection('/guides/2/gallery.json',   '#g2', '/guides/2/');
+  loadSection('/guides/3/gallery.json',   '#g3', '/guides/3/');
+  loadSection('/guides/inst/gallery.json','#gI', '/guides/inst/');
+</script>
+</body>
+</html>
