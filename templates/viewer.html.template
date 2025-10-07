@@ -225,15 +225,27 @@
     flip.loadFromImages(images);
     flip.turnToPage(0, 'hard');
 
-    // Remove the clip - PageFlip's showCover should handle it natively
-    // flipEl.classList.add('cover-clip');
-
-    // On first interaction/flip, ensure smooth navigation
-    // const exitCover = () => flipEl.classList.remove('cover-clip');
-    // try { flip.on('flip', exitCover); } catch {}
-    // flipEl.addEventListener('pointerdown', exitCover, { once:true });
-    // document.getElementById('nextBtn').addEventListener('click', exitCover, { once:true });
-    // document.getElementById('prevBtn').addEventListener('click', exitCover, { once:true });
+    // Dynamically adjust container width based on page display mode
+    // Cover page = single width, spreads = double width
+    function updateContainerWidth() {
+      const currentPage = flip.getCurrentPageIndex();
+      // Page 0 is cover (showCover: true), show single page width
+      if (currentPage === 0) {
+        flipEl.style.width = `${baseW}px`;
+      } else {
+        flipEl.style.width = `${baseW * 2}px`;
+      }
+    }
+    
+    // Set initial width for cover
+    updateContainerWidth();
+    
+    // Update width on page flip
+    try { 
+      flip.on('flip', () => {
+        setTimeout(updateContainerWidth, 50); // Small delay to let PageFlip update
+      }); 
+    } catch {}
 
     // Controls
     document.getElementById('prevBtn').onclick = () => flip.flipPrev('hard');
