@@ -30,14 +30,7 @@
        color:var(--text);text-decoration:none;margin-left:8px;cursor:pointer}
   .btn:hover{border-color:#3c4a75}
 
-  #flipbook{height:calc(100vh - 52px); width:100%; margin:0 auto}
-
-  /* Show only the RIGHT half initially (true single cover, no reflow). */
-  #flipbook.cover-clip { clip-path: inset(0 0 0 50%); }
-  @supports not (clip-path: inset(0)) {
-    #flipbook.cover-clip { overflow:hidden; position:relative; }
-    #flipbook.cover-clip > * { position:relative; left:-50%; }
-  }
+  #flipbook{height:calc(100vh - 52px); max-width:100%; margin:0 auto}
 
   #loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg)}
 
