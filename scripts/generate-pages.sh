@@ -42,12 +42,14 @@ LODGE_FULL_NAME=$(jq -r '.branding.siteTitle // .lodge.name' "$CONFIG")
 LODGE_SHORT_NAME=$(jq -r '.lodge.shortName // "L" + (.lodge.number // "0000")' "$CONFIG")
 LOGO_PATH=$(jq -r '.branding.logo // "/assets/logo.png"' "$CONFIG")
 SUMMONS_PREFIX=$(jq -r '.files.summonsPrefix // "Summons"' "$CONFIG")
+MINUTES_PREFIX=$(jq -r '.files.minutesPrefix // "Minutes"' "$CONFIG")
 
 echo "Configuration:"
 echo "  Lodge: $LODGE_FULL_NAME"
 echo "  Short: $LODGE_SHORT_NAME"
 echo "  Logo: $LOGO_PATH"
-echo "  Prefix: $SUMMONS_PREFIX"
+echo "  Summons Prefix: $SUMMONS_PREFIX"
+echo "  Minutes Prefix: $MINUTES_PREFIX"
 echo ""
 
 # Function to process a template
@@ -66,6 +68,7 @@ process_template() {
     -e "s|{{LODGE_SHORT_NAME}}|$LODGE_SHORT_NAME|g" \
     -e "s|{{LOGO_PATH}}|$LOGO_PATH|g" \
     -e "s|{{SUMMONS_PREFIX}}|$SUMMONS_PREFIX|g" \
+    -e "s|{{MINUTES_PREFIX}}|$MINUTES_PREFIX|g" \
     "$template_path" > "$output_path"
 }
 

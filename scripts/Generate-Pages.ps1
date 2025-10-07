@@ -40,12 +40,14 @@ $LODGE_FULL_NAME = if ($config.titles.siteTitle) { $config.titles.siteTitle } el
 $LODGE_SHORT_NAME = if ($config.lodge.shortName) { $config.lodge.shortName } else { "L$($config.lodge.number)" }
 $LOGO_PATH = if ($config.branding.logo) { $config.branding.logo } else { "/assets/logo.png" }
 $SUMMONS_PREFIX = if ($config.files.summonsPrefix) { $config.files.summonsPrefix } else { "Summons" }
+$MINUTES_PREFIX = if ($config.files.minutesPrefix) { $config.files.minutesPrefix } else { "Minutes" }
 
 Write-Host "Configuration:"
 Write-Host "  Lodge: $LODGE_FULL_NAME"
 Write-Host "  Short: $LODGE_SHORT_NAME"
 Write-Host "  Logo: $LOGO_PATH"
-Write-Host "  Prefix: $SUMMONS_PREFIX"
+Write-Host "  Summons Prefix: $SUMMONS_PREFIX"
+Write-Host "  Minutes Prefix: $MINUTES_PREFIX"
 Write-Host ""
 
 function Process-Template {
@@ -65,7 +67,8 @@ function Process-Template {
         $_ -replace '\{\{LODGE_FULL_NAME\}\}', $LODGE_FULL_NAME `
            -replace '\{\{LODGE_SHORT_NAME\}\}', $LODGE_SHORT_NAME `
            -replace '\{\{LOGO_PATH\}\}', $LOGO_PATH `
-           -replace '\{\{SUMMONS_PREFIX\}\}', $SUMMONS_PREFIX
+           -replace '\{\{SUMMONS_PREFIX\}\}', $SUMMONS_PREFIX `
+           -replace '\{\{MINUTES_PREFIX\}\}', $MINUTES_PREFIX
     } | Set-Content -Path $OutputPath -Encoding UTF8
 }
 

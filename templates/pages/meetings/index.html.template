@@ -156,8 +156,8 @@
     else {
       $('#meeting-single').style.display = 'block';
       
-      const summonsPath = `/summons/{{SUMMONS_PREFIX}}-Summons-${pad4(meeting)}.pdf`;
-      const minutesPrev = `/minutes/{{SUMMONS_PREFIX}}-Minutes-${pad4(meeting-1)}.pdf`;
+      const summonsPath = `/summons/{{SUMMONS_PREFIX}}${pad4(meeting)}.pdf`;
+      const minutesPrev = `/minutes/{{MINUTES_PREFIX}}${pad4(meeting-1)}.pdf`;
       
       $('#hero .thumb').innerHTML = `<img src="${thumbUrlFor(summonsPath)}" alt="Summons" loading="lazy" decoding="async">`;
       $('#mtitle').textContent = `Meeting ${meeting}`;
