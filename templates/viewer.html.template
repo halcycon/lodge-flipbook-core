@@ -200,8 +200,18 @@
       await Promise.race([...workers]);
       await spawn();
     }
-    // Don't pad - let PageFlip handle odd pages with showCover mode
-    // (showCover:true means first page displays alone on right)
+    
+    // CRITICAL: Add a blank page at the start so pages align correctly on spreads
+    // With showCover:true, PageFlip shows: [cover][blank-page2][page3-page4][page5-page6]...
+    // We need: [cover][padding][page2-page3][page4-page5]...
+    // So insert a blank page at index 1
+    const blankPage = document.createElement('canvas');
+    blankPage.width = baseW; 
+    blankPage.height = baseH;
+    const blankCtx = blankPage.getContext('2d');
+    blankCtx.fillStyle = '#ffffff'; 
+    blankCtx.fillRect(0, 0, baseW, baseH);
+    images.splice(1, 0, blankPage.toDataURL('image/png'));
 
     // Init PageFlip (cover mode, curls on)
     const flipEl = document.getElementById('flipbook');
