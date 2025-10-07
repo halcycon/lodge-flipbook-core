@@ -235,14 +235,27 @@
     flip.loadFromImages(images);
     flip.turnToPage(0, 'hard');
 
+    // Skip the blank padding page when flipping forward from cover
+    let onCover = true;
+    const originalFlipNext = () => flip.flipNext('hard');
+    const smartFlipNext = () => {
+      if (onCover && flip.getCurrentPageIndex() === 0) {
+        // Skip from cover (page 0) directly to first spread (page 2)
+        flip.turnToPage(2, 'hard');
+        onCover = false;
+      } else {
+        originalFlipNext();
+      }
+    };
+
     // Controls
     document.getElementById('prevBtn').onclick = () => flip.flipPrev('hard');
-    document.getElementById('nextBtn').onclick = () => flip.flipNext('hard');
+    document.getElementById('nextBtn').onclick = smartFlipNext;
 
     // Keyboard nav
     addEventListener('keydown', e => {
-      if (e.key === 'ArrowRight') { exitCover(); flip.flipNext('hard'); }
-      if (e.key === 'ArrowLeft')  { exitCover(); flip.flipPrev('hard'); }
+      if (e.key === 'ArrowRight') smartFlipNext();
+      if (e.key === 'ArrowLeft')  flip.flipPrev('hard');
     });
   </script>
 </body>
