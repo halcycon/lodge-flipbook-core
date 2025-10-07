@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Ensure UTF-8 encoding for proper character handling
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+
 CONFIG="config/lodge.json"
 
 if [[ ! -f "$CONFIG" ]]; then

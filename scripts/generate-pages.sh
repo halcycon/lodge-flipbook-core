@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Generate page# Extract values from config
-LODGE_FULL_NAME=$(jq -r '.titles.siteTitle // .branding.siteTitle // .lodge.name' "$CONFIG")
-LODGE_SHORT_NAME=$(jq -r '.lodge.shortName // "L" + (.lodge.number // "0000")' "$CONFIG")ML files from templates using config/lodge.json
+# Generate HTML files from templates using config/lodge.json
 set -euo pipefail
+
+# Ensure UTF-8 encoding for proper character handling
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
 
 LODGE_ROOT="${1:-.}"
 CONFIG="$LODGE_ROOT/config/lodge.json"
