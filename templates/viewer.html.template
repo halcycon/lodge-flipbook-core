@@ -201,10 +201,8 @@
       await spawn();
     }
     
-    // CRITICAL: Add a blank page at the start so pages align correctly on spreads
-    // With showCover:true, PageFlip shows: [cover][blank-page2][page3-page4][page5-page6]...
-    // We need: [cover][padding][page2-page3][page4-page5]...
-    // So insert a blank page at index 1
+    // Add blank padding so spreads align: [page1][blank][page2-page3][page4-page5]...
+    // This way page 1 is alone, then all subsequent pages pair correctly
     const blankPage = document.createElement('canvas');
     blankPage.width = baseW; 
     blankPage.height = baseH;
@@ -213,13 +211,13 @@
     blankCtx.fillRect(0, 0, baseW, baseH);
     images.splice(1, 0, blankPage.toDataURL('image/png'));
 
-    // Init PageFlip (cover mode, curls on)
+    // Init PageFlip (NO showCover - we'll handle cover display manually)
     const flipEl = document.getElementById('flipbook');
     const flip = new St.PageFlip(flipEl, {
       width: baseW,
       height: baseH,
       size: 'fixed',
-      showCover: true,        // page 1 alone (right)
+      showCover: false,       // Don't use showCover - causes narrow display
       usePortrait: true,      // single page when container is narrow
       startPage: 0,
       maxShadowOpacity: 0.4,
@@ -235,27 +233,35 @@
     flip.loadFromImages(images);
     flip.turnToPage(0, 'hard');
 
-    // Skip the blank padding page when flipping forward from cover
-    let onCover = true;
-    const originalFlipNext = () => flip.flipNext('hard');
+    // Skip the blank padding page (index 1) when navigating
     const smartFlipNext = () => {
-      if (onCover && flip.getCurrentPageIndex() === 0) {
-        // Skip from cover (page 0) directly to first spread (page 2)
+      const current = flip.getCurrentPageIndex();
+      if (current === 0) {
+        // From page 0 (cover), jump to page 2 (first real spread)
         flip.turnToPage(2, 'hard');
-        onCover = false;
       } else {
-        originalFlipNext();
+        flip.flipNext('hard');
+      }
+    };
+    
+    const smartFlipPrev = () => {
+      const current = flip.getCurrentPageIndex();
+      if (current === 2) {
+        // From page 2 (first spread), jump back to page 0 (cover)
+        flip.turnToPage(0, 'hard');
+      } else {
+        flip.flipPrev('hard');
       }
     };
 
     // Controls
-    document.getElementById('prevBtn').onclick = () => flip.flipPrev('hard');
+    document.getElementById('prevBtn').onclick = smartFlipPrev;
     document.getElementById('nextBtn').onclick = smartFlipNext;
 
     // Keyboard nav
     addEventListener('keydown', e => {
       if (e.key === 'ArrowRight') smartFlipNext();
-      if (e.key === 'ArrowLeft')  flip.flipPrev('hard');
+      if (e.key === 'ArrowLeft')  smartFlipPrev();
     });
   </script>
 </body>
