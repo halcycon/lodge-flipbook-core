@@ -207,14 +207,8 @@
       await Promise.race([...workers]);
       await spawn();
     }
-    // Pad if odd so final spread is tidy
-    if (images.length % 2 === 1) {
-      const pad = document.createElement('canvas');
-      pad.width = baseW; pad.height = baseH;
-      const ctx = pad.getContext('2d');
-      ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,baseW,baseH);
-      images.push(pad.toDataURL('image/png'));
-    }
+    // Don't pad - let PageFlip handle odd pages with showCover mode
+    // (showCover:true means first page displays alone on right)
 
     // Init PageFlip (cover mode, curls on)
     const flipEl = document.getElementById('flipbook');
@@ -238,15 +232,15 @@
     flip.loadFromImages(images);
     flip.turnToPage(0, 'hard');
 
-    // Hide the empty left half on the cover without resizing the book
-    flipEl.classList.add('cover-clip');
+    // Remove the clip - PageFlip's showCover should handle it natively
+    // flipEl.classList.add('cover-clip');
 
-    // On first interaction/flip, reveal full spread (remove clip) — no reflow
-    const exitCover = () => flipEl.classList.remove('cover-clip');
-    try { flip.on('flip', exitCover); } catch {}
-    flipEl.addEventListener('pointerdown', exitCover, { once:true });
-    document.getElementById('nextBtn').addEventListener('click', exitCover, { once:true });
-    document.getElementById('prevBtn').addEventListener('click', exitCover, { once:true });
+    // On first interaction/flip, ensure smooth navigation
+    // const exitCover = () => flipEl.classList.remove('cover-clip');
+    // try { flip.on('flip', exitCover); } catch {}
+    // flipEl.addEventListener('pointerdown', exitCover, { once:true });
+    // document.getElementById('nextBtn').addEventListener('click', exitCover, { once:true });
+    // document.getElementById('prevBtn').addEventListener('click', exitCover, { once:true });
 
     // Controls
     document.getElementById('prevBtn').onclick = () => flip.flipPrev('hard');
