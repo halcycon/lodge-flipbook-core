@@ -30,7 +30,7 @@
        color:var(--text);text-decoration:none;margin-left:8px;cursor:pointer}
   .btn:hover{border-color:#3c4a75}
 
-  #flipbook{height:calc(100vh - 52px); max-width:100%; margin:0 auto}
+  #flipbook{height:calc(100vh - 52px); margin:0 auto; display:flex; justify-content:center; align-items:center}
 
   #loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg)}
 
@@ -234,28 +234,6 @@
     document.getElementById('loading').remove();
     flip.loadFromImages(images);
     flip.turnToPage(0, 'hard');
-
-    // Dynamically adjust container width based on page display mode
-    // Cover page = single width, spreads = double width
-    function updateContainerWidth() {
-      const currentPage = flip.getCurrentPageIndex();
-      // Page 0 is cover (showCover: true), show single page width
-      if (currentPage === 0) {
-        flipEl.style.width = `${baseW}px`;
-      } else {
-        flipEl.style.width = `${baseW * 2}px`;
-      }
-    }
-    
-    // Set initial width for cover
-    updateContainerWidth();
-    
-    // Update width on page flip
-    try { 
-      flip.on('flip', () => {
-        setTimeout(updateContainerWidth, 50); // Small delay to let PageFlip update
-      }); 
-    } catch {}
 
     // Controls
     document.getElementById('prevBtn').onclick = () => flip.flipPrev('hard');
