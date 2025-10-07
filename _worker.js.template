@@ -125,6 +125,38 @@ export default {
       return new Response(upstream.body, { status: upstream.status, headers: h });
     }
 
+    // ---------- Meetings list endpoint ----------
+    if (path === "/meetings.json") {
+      try {
+        // Discover all meetings by listing summons thumbnails from R2
+        const list = await env.THUMBS.list({ prefix: "summons/{{SUMMONS_PREFIX}}" });
+        const meetings = [];
+        
+        if (list && list.objects) {
+          for (const obj of list.objects) {
+            // Extract meeting number from filename like "summons/L5749-Summons-0344.jpg"
+            const match = obj.key.match(/{{SUMMONS_PREFIX}}(\d{4})\.jpg$/i);
+            if (match) {
+              const meetingNum = match[1];
+              meetings.push({
+                meeting: meetingNum,
+                summons: `/summons/{{SUMMONS_PREFIX}}${meetingNum}.pdf`,
+                thumbnail: `/thumbnails/${obj.key}`
+              });
+            }
+          }
+        }
+        
+        // Sort by meeting number descending (newest first)
+        meetings.sort((a, b) => b.meeting.localeCompare(a.meeting));
+        
+        return json({ meetings });
+      } catch (e) {
+        console.error('Error listing meetings:', e);
+        return json({ meetings: [], error: 'Failed to list meetings' }, 500);
+      }
+    }
+
     // ---------- Auth endpoints ----------
     if (path === "/__auth" && request.method === "POST") {
       return handleAuth(request, env);
