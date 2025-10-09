@@ -207,8 +207,9 @@
       await Promise.race([...workers]);
       await spawn();
     }
-    // Pad if odd so final spread is tidy
-    if (images.length % 2 === 1) {
+    // With showCover:true, page 1 is the cover (alone), then pages 2+ form spreads.
+    // Only pad if there's an even total (since cover is separate, remaining pages would be odd).
+    if (images.length % 2 === 0) {
       const pad = document.createElement('canvas');
       pad.width = baseW; pad.height = baseH;
       const ctx = pad.getContext('2d');
