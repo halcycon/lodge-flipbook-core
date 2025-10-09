@@ -201,14 +201,8 @@
       await spawn();
     }
 
-    // Add a blank page at index 1 so spreads align correctly with showCover:true
-    const blankPage = document.createElement('canvas');
-    blankPage.width = baseW;
-    blankPage.height = baseH;
-    const blankCtx = blankPage.getContext('2d');
-    blankCtx.fillStyle = '#ffffff';
-    blankCtx.fillRect(0, 0, baseW, baseH);
-    images.splice(1, 0, blankPage.toDataURL('image/png'));
+    // With showCover:true, the library handles page 1 as cover automatically.
+    // No padding needed - pages 2+ will form spreads naturally.
 
     // Init PageFlip (cover mode)
     const flipEl = document.getElementById('flipbook');
