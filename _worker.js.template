@@ -1,4 +1,4 @@
-// _worker.js — L5749 (files.hundredelmslodge.org.uk)
+// _worker.js — L{{LODGE_NUMBER}} ({{LODGE_DOMAIN}})
 
 export default {
   async fetch(request, env, ctx) {
@@ -17,10 +17,10 @@ export default {
       try {
         // Special alias for the latest summons thumb
         if (path === "/thumbnails/summons/current.jpg") {
-          const list = await env.THUMBS.list({ prefix: "summons/L5749-Summons-" });
+          const list = await env.THUMBS.list({ prefix: "summons/{{SUMMONS_PREFIX}}" });
           const latestKey = list?.objects
             ?.map(o => o.key)
-            ?.filter(k => /summons\/L5749-Summons-\d{4}\.jpg$/i.test(k))
+            ?.filter(k => /summons\/{{SUMMONS_PREFIX}}\d{4}\.jpg$/i.test(k))
             ?.sort()
             ?.pop();
           if (latestKey) {
@@ -134,7 +134,7 @@ export default {
         
         if (list && list.objects) {
           for (const obj of list.objects) {
-            // Extract meeting number from filename like "summons/L5749-Summons-0344.jpg"
+            // Extract meeting number from filename like "summons/{{SUMMONS_PREFIX}}0344.jpg"
             const match = obj.key.match(/{{SUMMONS_PREFIX}}(\d{4})\.jpg$/i);
             if (match) {
               const meetingNum = match[1];
@@ -464,7 +464,7 @@ function handleLogout(url) {
   const html = `<!doctype html>
 <html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Signed out — Hundred Elms Lodge</title>
+<title>{{LOGOUT_TITLE}}</title>
 <meta http-equiv="refresh" content="4;url=${escapeHtml(ret)}">
 <style>
 :root{--bg:#0f1115;--panel:#151821;--text:#eef3ff;--muted:#a9b4cf;--ring:#2c3756}
@@ -481,7 +481,7 @@ p{margin:8px 0;color:var(--muted)}
 </style></head>
 <body>
 <div class="wrap"><div class="card">
-  <div class="logo"><img src="/assets/l5749-logo.png" alt=""><strong>Hundred Elms Lodge No. 5749</strong></div>
+  <div class="logo"><img src="{{LOGO_PATH}}" alt=""><strong>{{LODGE_FULL_NAME}}</strong></div>
   <h1>You’re signed out</h1>
   <p>You’ll be redirected in a few seconds.</p>
   <div class="actions">
