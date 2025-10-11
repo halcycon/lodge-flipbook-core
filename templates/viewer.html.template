@@ -44,8 +44,8 @@
 <header class="site-header"
   data-crumbs='[["/"]]'
   data-back-text="Home" data-back-href="/"
-  data-title="Hundred Elms Lodge No. 5749 - Document Viewer">
-  <img class="logo" src="/assets/l5749-logo.png" alt="L5749 logo">
+  data-title="{{LODGE_FULL_NAME}} - Document Viewer">
+  <img class="logo" src="{{LOGO_PATH}}" alt="{{LODGE_SHORT_NAME}} logo">
   <nav class="crumbs" aria-label="Breadcrumb"></nav>
   <h1 class="page-title"></h1>
 </header>
