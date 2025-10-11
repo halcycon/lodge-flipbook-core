@@ -38,7 +38,7 @@ echo "=========================================="
 echo ""
 
 # Extract values from config
-LODGE_FULL_NAME=$(jq -r '.branding.siteTitle // .lodge.name' "$CONFIG")
+LODGE_FULL_NAME=$(jq -r '.titles.siteTitle // .lodge.name' "$CONFIG")
 LODGE_SHORT_NAME=$(jq -r '.lodge.shortName // "L" + (.lodge.number // "0000")' "$CONFIG")
 LOGO_PATH=$(jq -r '.branding.logo // "/assets/logo.png"' "$CONFIG")
 SUMMONS_PREFIX=$(jq -r '.files.summonsPrefix // "Summons"' "$CONFIG")
