@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>{{LODGE_FULL_NAME}}</title>
+<link rel="icon" type="image/png" href="{{LOGO_PATH}}">
+<link rel="apple-touch-icon" href="{{LOGO_PATH}}">
+<link rel="shortcut icon" type="image/png" href="{{LOGO_PATH}}">
+<style>
+  :root{
+    --bg:#0f1115;--bg2:#151821;--card:#1b1f2a;
+    --text:#eef3ff;--muted:#a9b4cf;--ring:#2c3756;--link:#9ecbff;
+  }
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Roboto,Inter,Arial}
+
+  /* Header / breadcrumbs */
+  .site-header{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--bg2);border-bottom:1px solid var(--ring)}
+  .site-header .logo{height:26px}
+  .site-header .crumbs{display:flex;gap:8px;align-items:center;white-space:nowrap;overflow:auto}
+  .site-header .crumbs a{color:var(--link);text-decoration:none}
+  .site-header .sep{opacity:.5}
+  .site-header .back{margin-right:8px;color:var(--link);text-decoration:none}
+  .site-header .spacer{flex:1}
+  .site-header .page-title{font-size:18px;margin:0}
+  .site-header .logout{background:#1b1f2a;border:1px solid var(--ring);padding:6px 10px;border-radius:8px;color:#fff;text-decoration:none}
+  .site-header .logout:hover{border-color:#3c4a75}
+
+  main{max-width:1000px;margin:24px auto;padding:0 16px}
+  h2{margin:0 0 10px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+  .card{display:block;background:var(--card);border:1px solid var(--ring);border-radius:14px;padding:16px 14px;text-decoration:none;color:inherit}
+  .card:hover{border-color:#3c4a75}
+  .thumb{aspect-ratio:3/4;background:#0b0d12;display:grid;place-items:center;border-radius:10px;overflow:hidden;margin-bottom:10px}
+  .thumb img{max-width:100%;max-height:100%;display:block}
+  .muted{color:var(--muted)}
+  footer{padding:24px;color:var(--muted);text-align:center}
+</style>
+</head>
+<body>
+
+<!-- Reusable breadcrumb header -->
+<header class="site-header"
+  data-crumbs='[["/"]]'
+  data-back-text="Home" data-back-href="/"
+  data-title="{{LODGE_FULL_NAME}}">
+  <img class="logo" src="{{LOGO_PATH}}" alt="{{LODGE_SHORT_NAME}} logo">
+  <nav class="crumbs" aria-label="Breadcrumb"></nav>
+  <h1 class="page-title"></h1>
+</header>
+<script type="module">
+  let v='dev';
+  try{ const r=await fetch('/version.json',{cache:'no-store'}); if(r.ok){ const j=await r.json(); v=j.commit||'dev'; } }catch{}
+  await import(`/assets/header.js?v=${encodeURIComponent(v)}`);
+</script>
+<style>
+  .site-header{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--bg2);border-bottom:1px solid var(--ring)}
+  .site-header .logo{height:26px}
+  .site-header .crumbs{display:flex;gap:8px;align-items:center;white-space:nowrap;overflow:auto}
+  .site-header .crumbs a{color:var(--link);text-decoration:none}
+  .site-header .sep{opacity:.5}
+  .site-header .spacer{flex:1}
+  .site-header .back{margin-left:8px;color:var(--link);text-decoration:none}
+  .site-header .page-title{font-size:18px;margin:0}
+  .site-header .logout{background:#1b1f2a;border:1px solid var(--ring);padding:6px 10px;border-radius:8px;color:#fff;text-decoration:none}
+  .site-header .logout:hover{border-color:#3c4a75}
+</style>
+<main>
+  <!-- Current Summons (public) -->
+  <section aria-labelledby="current-h2">
+    <h2 id="current-h2">Current Summons</h2>
+    <div class="grid">
+      <a class="card" id="card-current-viewer" href="/viewer.html?pdf=%2Fsummons%2Fcurrent.pdf">
+        <div class="thumb">
+          <img id="img-current-thumb" src="/thumbnails/summons/current.jpg" alt="Current Summons" loading="eager" decoding="async">
+        </div>
+        <strong>Open in Flip-Book</strong>
+        <div class="muted">/summons/current.pdf</div>
+      </a>
+      <a class="card" id="card-current-pdf" href="/summons/current.pdf">
+        <div class="thumb"><div class="muted" style="padding:10px">PDF</div></div>
+        <strong>Download PDF</strong>
+        <div class="muted">Latest</div>
+      </a>
+    </div>
+  </section>
+
+  <!-- Navigate -->
+  <section aria-labelledby="nav-h2" style="margin-top:28px">
+    <h2 id="nav-h2">Navigate</h2>
+    <div class="grid">
+      <a class="card" href="/current/">
+        <strong>Current Meeting Bundle</strong>
+        <div class="muted">Summons, previous minutes, and appendices.</div>
+      </a>
+      <a class="card" href="/publications/">
+        <strong>Archive</strong>
+        <div class="muted">Browse all past Summons & Minutes.</div>
+      </a>
+      <a class="card" href="/guides/">
+        <strong>Ritual Guides</strong>
+        <div class="muted">Pages open; files are degree-protected.</div>
+      </a>
+      <a class="card" href="/other/">
+        <strong>Other Documents</strong>
+        <div class="muted">Members only.</div>
+      </a>
+    </div>
+  </section>
+</main>
+
+<footer>© <span id="y"></span> {{LODGE_FULL_NAME}}</footer>
+
+<script type="module">
+  // ---------- Version the "current" links & thumbnail ----------
+  async function getVersion() {
+    try {
+      const r = await fetch('/version.json', {cache:'no-store'});
+      if (r.ok) { const j = await r.json(); return j.commit || 'dev'; }
+    } catch {}
+    return 'dev';
+  }
+
+  (async () => {
+    const v = await getVersion();
+
+    // Flip-book (viewer) link for current
+    const flip = document.getElementById('card-current-viewer');
+    if (flip) {
+      const pdfParam = encodeURIComponent(`/summons/current.pdf?v=${v}`);
+      flip.href = `/viewer.html?pdf=${pdfParam}`;
+    }
+
+    // Download link for current
+    const dl = document.getElementById('card-current-pdf');
+    if (dl) {
+      dl.href = `/summons/current.pdf?v=${v}`;
+    }
+
+    // Current thumbnail (use alias; add ?v to bust any stale image caches)
+    const img = document.getElementById('img-current-thumb');
+    if (img) {
+      img.src = `/thumbnails/summons/current.jpg?v=${v}`;
+    }
+  })();
+
+  // ---------- Footer year ----------
+  document.getElementById('y').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>
