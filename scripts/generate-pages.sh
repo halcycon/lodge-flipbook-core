@@ -95,6 +95,16 @@ if [[ -f "$PAGES_DIR/other/index.html.template" ]]; then
   process_template "$PAGES_DIR/other/index.html.template" "$LODGE_ROOT/other/index.html"
 fi
 
+# Generate root index.html from template if it exists
+if [[ -f "$CORE_DIR/templates/index.html.template" ]]; then
+  echo "→ Generating: index.html"
+  sed \
+    -e "s|{{LODGE_FULL_NAME}}|$LODGE_FULL_NAME|g" \
+    -e "s|{{LODGE_SHORT_NAME}}|$LODGE_SHORT_NAME|g" \
+    -e "s|{{LOGO_PATH}}|$LOGO_PATH|g" \
+    "$CORE_DIR/templates/index.html.template" > "$LODGE_ROOT/index.html"
+fi
+
 # Generate viewer.html from template if it exists
 if [[ -f "$CORE_DIR/templates/viewer.html.template" ]]; then
   echo "→ Generating: viewer.html"
@@ -109,6 +119,7 @@ echo ""
 echo "✅ Generated all pages from templates"
 echo ""
 echo "Pages generated:"
+echo "  • index.html"
 echo "  • current/index.html"
 echo "  • guides/index.html"
 echo "  • meetings/index.html"
